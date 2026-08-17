@@ -25,6 +25,7 @@ from runningwhale.garmin import (
     _silencieux,
     _source_des_jetons,
     _traduire,
+    exporter_jetons,
     sync,
     sync_wellness,
 )
@@ -180,6 +181,40 @@ def test_sauvegarde_impossible_le_dit_sans_pretendre_avoir_reussi(tmp_path):
     with pytest.raises(GarminError) as err:
         _sauver_jetons(ApiMuette(), tmp_path)
     assert "jetons" in str(err.value)
+
+
+def test_export_des_jetons_prefere_le_client_recent():
+    class Client:
+        def dumps(self):
+            return '{"di_token": "abc"}'
+
+    class ApiRecente:
+        garth = None
+        client = Client()
+
+    assert exporter_jetons(ApiRecente()) == '{"di_token": "abc"}'
+
+
+def test_export_des_jetons_retombe_sur_garth():
+    class Garth:
+        def dumps(self):
+            return "blob-base64"
+
+    class ApiAncienne:
+        client = None
+        garth = Garth()
+
+    assert exporter_jetons(ApiAncienne()) == "blob-base64"
+
+
+def test_export_impossible_le_dit(tmp_path):
+    class ApiMuette:
+        client = None
+        garth = None
+
+    with pytest.raises(GarminError) as err:
+        exporter_jetons(ApiMuette())
+    assert "sérialiser" in str(err.value)
 
 
 def test_chaine_de_causes_supporte_un_cycle():

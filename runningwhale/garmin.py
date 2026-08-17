@@ -182,10 +182,10 @@ def _message_ip_refusee() -> str:
         "partie en limitation de débit puis en CAPTCHA, ce qu'aucun mot de passe "
         "ne corrige. Garmin filtre les IP de centre de données — session cloud, "
         "VPS, intégration continue.\n"
-        "La voie qui marche : lance `coach login` depuis une machine à IP "
-        "résidentielle, puis rapporte les jetons obtenus ici via GARMIN_TOKENS "
-        "(contenu du fichier de jetons, ou chemin vers le dossier). Ils valent "
-        "environ un an, et la synchro repart sans nouvelle authentification."
+        "La voie qui marche : lance `coach login --exporter` depuis une machine "
+        "à IP résidentielle, et pose la valeur imprimée dans le secret "
+        "d'environnement GARMIN_TOKENS. Les jetons valent environ un an, et la "
+        "synchro repart sans nouvelle authentification."
     )
 
 
@@ -382,6 +382,25 @@ def _sauver_jetons(api: Garmin, token_dir: Path) -> None:
         "Connexion réussie, mais cette version de garminconnect n'expose aucun "
         "moyen d'enregistrer les jetons : la prochaine commande devra se "
         "reconnecter. Mets la bibliothèque à jour (`pip install -U garminconnect`)."
+    )
+
+
+def exporter_jetons(api: Garmin) -> str:
+    """Sérialise les jetons de la session, prêts à poser dans `GARMIN_TOKENS`.
+
+    C'est le pont entre une machine résidentielle et une session cloud : Garmin
+    refuse d'authentifier une IP de centre de données, mais accepte d'y voir
+    revivre des jetons obtenus ailleurs (voir `_source_des_jetons`). Même
+    prudence de version que `_sauver_jetons` : `client.dumps` sur les versions
+    récentes de garminconnect, `garth.dumps` sur les anciennes.
+    """
+    for porteur in (getattr(api, "client", None), getattr(api, "garth", None)):
+        serialiser = getattr(porteur, "dumps", None)
+        if callable(serialiser):
+            return serialiser()
+    raise GarminError(
+        "Cette version de garminconnect n'expose aucun moyen de sérialiser "
+        "les jetons. Mets la bibliothèque à jour (`pip install -U garminconnect`)."
     )
 
 

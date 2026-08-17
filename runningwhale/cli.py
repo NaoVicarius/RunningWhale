@@ -16,7 +16,14 @@ from . import __version__, analysis, composition as composition_mod, llm, plan a
 from .composition import Composition
 from .config import Config, default_config_path, ensure_dirs, load_config
 from .db import Database
-from .garmin import GarminError, connect, masquer_secrets, sync, sync_wellness
+from .garmin import (
+    GarminError,
+    connect,
+    exporter_jetons,
+    masquer_secrets,
+    sync,
+    sync_wellness,
+)
 from .imports import ImportError_, importer
 
 CLE_PLAN_COURANT = "plan_courant"
@@ -249,6 +256,18 @@ def cmd_login(args: argparse.Namespace) -> int:
         nom = "(nom indisponible)"
     info(f"Connecté à Garmin Connect : {nom}")
     info(f"Jetons enregistrés dans {cfg.token_dir} — valables environ un an.")
+    if args.exporter:
+        try:
+            valeur = exporter_jetons(api)
+        except GarminError as exc:
+            erreur(str(exc))
+            return 1
+        info("")
+        info("Valeur à poser dans le secret d'environnement GARMIN_TOKENS de ta")
+        info("session cloud (elle vaut ce que valent tes jetons : environ un an,")
+        info("et l'accès à ton compte Garmin — traite-la comme un mot de passe) :")
+        info("")
+        print(valeur)
     return 0
 
 
@@ -734,6 +753,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.set_defaults(func=cmd_init)
 
     p = sous.add_parser("login", help="Se connecter à Garmin Connect")
+    p.add_argument("--exporter", action="store_true",
+                   help="Imprimer les jetons pour le secret GARMIN_TOKENS "
+                        "d'une session cloud (Garmin refuse d'authentifier "
+                        "les IP de centre de données ; il accepte leurs jetons)")
     p.set_defaults(func=cmd_login)
 
     p = sous.add_parser("sync", help="Récupérer les nouvelles activités Garmin")

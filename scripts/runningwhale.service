@@ -1,0 +1,19 @@
+[Unit]
+Description=RunningWhale — synchronise Garmin et débriefe les nouvelles séances
+Documentation=https://github.com/NaoVicarius/RunningWhale
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+
+# La clé API est lue depuis un fichier d'environnement, jamais écrite ici.
+# Crée ~/.runningwhale/env avec la ligne :  ANTHROPIC_API_KEY=sk-ant-...
+# puis restreins-le :  chmod 600 ~/.runningwhale/env
+EnvironmentFile=%h/.runningwhale/env
+
+ExecStart=%h/.local/bin/coach watch
+
+# Le réseau peut être capricieux au réveil de la machine.
+Restart=on-failure
+RestartSec=120s

@@ -1,0 +1,15 @@
+[Unit]
+Description=Déclenche RunningWhale tous les soirs
+Documentation=https://github.com/NaoVicarius/RunningWhale
+
+[Timer]
+OnCalendar=*-*-* 21:30:00
+
+# Rattrape l'exécution si la machine était éteinte à l'heure prévue.
+Persistent=true
+
+# Évite que toutes les machines tapent Garmin à la même seconde.
+RandomizedDelaySec=15min
+
+[Install]
+WantedBy=timers.target

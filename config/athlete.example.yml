@@ -1,0 +1,78 @@
+# ---------------------------------------------------------------------------
+# Ton profil RunningWhale
+#
+# Règle unique : ne remplis que ce que tu SAIS.
+# Un champ vide n'est jamais un problème — le coach s'adapte à ce qu'il ignore
+# et te le dit. Une valeur inventée, elle, fausse tout en silence : une allure
+# seuil trop optimiste décale toutes tes zones, et tu t'entraînes trop dur sans
+# jamais comprendre pourquoi.
+#
+# Ce fichier reste sur ta machine. Il n'est jamais publié ni envoyé nulle part.
+# ---------------------------------------------------------------------------
+
+athlete:
+  prenom: Athlète
+
+  # -- Mesures qui ne changent pas (ou peu) --------------------------------
+  naissance:            # AAAA-MM ou AAAA-MM-JJ, ex. 1992-05
+                        # Mieux qu'un âge écrit en dur : il ne se périme pas.
+  taille_cm:            # ex. 178, ou 1m78, ou 1.78 — les trois marchent.
+                        # Sert à vérifier qu'on ne te propose pas une allure
+                        # plus lente que ta marche rapide (ça arrive vite).
+  sexe:                 # H ou F — intervient dans la formule de charge (TRIMP)
+  poids_kg:             # ex. 74. Sert aux conseils du coach, à aucun calcul
+                        # de performance. `coach poids` en tient l'historique.
+
+  # -- Repères cardiaques --------------------------------------------------
+  # Les plus utiles de tous : ils transforment tes sorties en charge
+  # d'entraînement réelle. Laisse vide si tu ne les connais pas.
+  fc_max:               # LA valeur la plus utile du fichier.
+                        # Ne mets pas « 220 − âge », c'est une moyenne de
+                        # population qui se trompe de 10 à 20 bpm sur un
+                        # individu. Prends plutôt la FC la plus haute que ta
+                        # montre ait enregistrée en côte ou en fin de course.
+  fc_repos:             # Prise au réveil, allongé, avant de te lever.
+                        # Ta montre l'affiche souvent aussi.
+  fc_seuil:             # FC moyenne que tu tiens sur un effort de 30 à 60 min
+                        # à fond. Se mesure, ne se devine pas.
+
+  # -- Allures -------------------------------------------------------------
+  allure_seuil:         # min:sec par km tenable environ une heure (≈ allure
+                        # 10 km). À laisser VIDE tant que tu ne l'as pas
+                        # mesurée : le coach l'estime depuis tes sorties.
+  vma_kmh:              # Vitesse maximale aérobie. Vide = estimée depuis ton
+                        # meilleur 5 km ou le VO2max de ta montre.
+
+  # -- Cadre d'entraînement ------------------------------------------------
+  seances_par_semaine:  # Combien de fois tu peux réellement courir. Sois
+                        # honnête : trois séances tenues valent mieux que
+                        # cinq prévues et deux faites.
+  volume_hebdo_cible_km:  # Laisse vide au début. Le volume se construit à
+                          # partir de ce que tu cours déjà, pas d'un souhait.
+
+  # -- Texte libre — le coach en tient compte ------------------------------
+  historique: >
+    Blessures passées, gênes récurrentes, articulations fragiles, temps
+    d'arrêt. Tout ce que le coach doit éviter de réveiller.
+  contraintes: >
+    Jours où tu peux courir, terrain disponible, horaires, matériel.
+    Ex. : sortie longue possible seulement le dimanche, pas de piste à
+    proximité, tapis en hiver.
+
+# ---------------------------------------------------------------------------
+# Tes objectifs. Le plus proche dans le futur sert de cap au coach.
+# Supprime ce bloc entier si tu n'as pas encore de but précis.
+# ---------------------------------------------------------------------------
+objectifs:
+  - nom: Mon premier 10 km
+    date: 2027-06-01
+    distance_km: 10
+    objectif_temps: "0:59:59"   # facultatif — enlève la ligne si tu ne vises
+                                # qu'à finir
+    priorite: A                 # A = objectif principal, B = secondaire
+
+coach:
+  modele: claude-opus-5
+  effort: high          # low | medium | high | xhigh | max
+  langue: français
+  # reports_dir: ~/running/rapports   # défaut : ~/.runningwhale/reports

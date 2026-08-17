@@ -1,0 +1,51 @@
+# Configuration personnelle — contient ton profil, tes objectifs, tes repères
+config/athlete.yml
+athlete.yml
+
+# Secrets : ne jamais versionner
+.env
+*.env
+!config/athlete.example.yml
+
+# Données locales (base, jetons Garmin, rapports, journaux)
+.runningwhale/
+garmin_tokens/
+*.db
+*.sqlite
+*.sqlite3
+reports/
+*.ics
+*.log
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Worktrees temporaires des agents Claude Code — copies de travail, jamais versionnées
+.claude/worktrees/
+
+# Éditeurs / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# --- Données personnelles ---------------------------------------------------
+# Données personnelles : elles ne sont JAMAIS versionnées.
+# Le coach range profil, base et rapports dans ~/.runningwhale/ (ou dans le
+# dossier pointé par RUNNINGWHALE_HOME). Le dossier data/ ici n'est qu'un
+# emplacement de travail local, vide dans le dépôt.
+data/*
+!data/.gitkeep
+
+
+# Préférences locales, propres à une personne — jamais publiées
+CLAUDE.local.md

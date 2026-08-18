@@ -278,13 +278,31 @@ def contexte_bilan(bilan: Bilan) -> str:
             " polarisation ; raisonne sur les allures et les volumes.",
         ]
 
-    if bilan.vma_kmh:
-        lignes.append(f"\n## VMA estimée : {bilan.vma_kmh} km/h")
+    if bilan.vma_provenance:
+        p = bilan.vma_provenance
+        if p.mesuree:
+            lignes.append(f"\n## VMA : {p.valeur} km/h ({p.source})")
+        else:
+            bas, haut = p.fourchette
+            lignes += [
+                f"\n## VMA estimée : entre {bas} et {haut} km/h",
+                f"- Source : {p.source} (calcul {p.version}).",
+                "- C'est une estimation, pas une mesure : ne la présente jamais "
+                "comme un acquis, et ne fonde aucune prescription sur sa borne "
+                "haute. Les allures ci-dessous sont déjà dérivées de la borne "
+                "basse. Si l'athlète évoque un test terrain ou labo, "
+                "recommande-lui d'en reporter le résultat dans son profil.",
+            ]
     if bilan.zones_fc:
         lignes.append("\n## Zones de fréquence cardiaque (en bpm)")
         lignes += [
             f"- {nom} : {bas}-{haut} bpm" for nom, (bas, haut) in bilan.zones_fc.items()
         ]
+        lignes.append(
+            "- Zones dérivées de la FC max du profil, pas d'un test en labo : "
+            "traite-les comme des repères, à recaler si les sensations de "
+            "l'athlète les contredisent."
+        )
 
     if bilan.allures:
         lignes.append("\n## Allures d'entraînement de référence")

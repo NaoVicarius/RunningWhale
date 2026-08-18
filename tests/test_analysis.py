@@ -23,6 +23,7 @@ from runningwhale.analysis import (
     vma_estimee,
     zone_de_fc,
 )
+from runningwhale import analysis
 from runningwhale.config import Athlete
 from runningwhale.models import Activity, Lap
 
@@ -282,15 +283,47 @@ def test_vma_profil_prioritaire(athlete):
 
 
 def test_vma_depuis_vo2max():
+    # Centrale : 56/3,5 = 16,0 km/h. Servie en borne basse (−10 %) : une
+    # estimation de montre ne se prescrit pas telle quelle (calculs v2).
     a = course()
     a.vo2max = 56.0
-    assert vma_estimee([a], Athlete(prenom="X")) == pytest.approx(16.0, abs=0.1)
+    assert vma_estimee([a], Athlete(prenom="X")) == pytest.approx(14.4, abs=0.1)
+
+
+def test_vma_depuis_vo2max_provenance():
+    a = course()
+    a.vo2max = 56.0
+    est = analysis.vma_avec_provenance([a], Athlete(prenom="X"))
+    assert not est.mesuree
+    assert est.valeur == est.fourchette[0] < est.fourchette[1]
+    assert "VO2max" in est.source
+    assert est.version == analysis.VERSION_CALCULS
 
 
 def test_vma_depuis_5km():
-    # 5 km en 20:00 = 15 km/h → VMA ≈ 16,3 km/h
+    # 5 km en 20:00 = 15 km/h → VMA centrale ≈ 16,3 km/h, servie telle quelle :
+    # à 92 % de VMA supposés, la centrale est déjà la borne basse.
     vma = vma_estimee([course(km=5.0, minutes=20.0)], Athlete(prenom="X"))
     assert vma == pytest.approx(16.3, abs=0.2)
+
+
+def test_vma_depuis_5km_provenance():
+    est = analysis.vma_avec_provenance(
+        [course(km=5.0, minutes=20.0)], Athlete(prenom="X")
+    )
+    assert not est.mesuree
+    assert est.valeur == est.fourchette[0] < est.fourchette[1]
+    assert "Riegel" in est.source
+
+
+def test_vma_declaree_est_mesuree():
+    # Une VMA posée dans le profil est celle de l'athlète : aucune incertitude
+    # ajoutée, et la provenance le dit.
+    est = analysis.vma_avec_provenance([], Athlete(prenom="X", vma_kmh=17.0))
+    assert est.mesuree
+    assert est.valeur == 17.0
+    assert est.fourchette == (17.0, 17.0)
+    assert "profil" in est.source
 
 
 # ---- analyse de séance ----

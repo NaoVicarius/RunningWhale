@@ -177,11 +177,37 @@ def bloc_performances(bilan: Bilan) -> str:
     return "\n\n".join(blocs)
 
 
+def titre_vma(bilan: Bilan) -> str:
+    """Complément du titre « Allures de référence » : la VMA et sa provenance.
+
+    Une estimation ne doit jamais ressembler à une mesure : la fourchette, la
+    source et la version du calcul l'accompagnent partout où elle s'affiche.
+    """
+    p = bilan.vma_provenance
+    if p is None:
+        return ""
+    if p.mesuree:
+        return f" — VMA {p.valeur} km/h ({p.source})"
+    bas, haut = p.fourchette
+    return (
+        f" — VMA estimée entre {bas} et {haut} km/h "
+        f"(source : {p.source} ; calcul {p.version})"
+    )
+
+
 def bloc_allures(bilan: Bilan) -> str:
     if not bilan.allures:
         return "_VMA inconnue : renseigne `vma_kmh` dans ta config, ou cours un 5 km chronométré._"
     lignes = ["| Type d'effort | Allure |", "|---|---:|"]
     lignes += [f"| {nom} | {valeur} |" for nom, valeur in bilan.allures.items()]
+    if bilan.vma_provenance is not None and not bilan.vma_provenance.mesuree:
+        lignes += [
+            "",
+            "> Estimation, pas une mesure : ces allures sont dérivées de la "
+            "**borne basse** de la fourchette de VMA — en cas d'erreur, elles "
+            "pèchent par douceur. Seul un test terrain ou labo fait foi ; "
+            "renseigne `vma_kmh` dans ton profil dès que tu en as un.",
+        ]
     if bilan.alerte_allures:
         lignes += ["", f"> ⚠️ {bilan.alerte_allures}"]
     return "\n".join(lignes)
@@ -206,6 +232,13 @@ def bloc_zones_fc(bilan: Bilan) -> str:
     for nom, (bas, haut) in bilan.zones_fc.items():
         code = nom.split(" ")[0]
         lignes.append(f"| {nom} | {bas}-{haut} bpm | {usages.get(code, '')} |")
+    lignes += [
+        "",
+        "> Zones calculées depuis la FC max de ton profil. Si elle vient d'une "
+        "observation en sortie et non d'un test maximal encadré, ta vraie FC max "
+        "peut être un peu plus haute : les zones pécheraient alors par douceur — "
+        "le bon côté de l'erreur.",
+    ]
     return "\n".join(lignes)
 
 
@@ -317,8 +350,7 @@ def rapport_bilan(cfg: Config, bilan: Bilan, commentaire: str | None = None) -> 
         "## Zones de fréquence cardiaque",
         bloc_zones_fc(bilan),
         "",
-        f"## Allures de référence"
-        + (f" — VMA estimée {bilan.vma_kmh} km/h" if bilan.vma_kmh else ""),
+        "## Allures de référence" + titre_vma(bilan),
         bloc_allures(bilan),
     ]
 
@@ -531,6 +563,16 @@ def bilan_vers_dict(cfg: Config, bilan: Bilan) -> dict:
             "lecture": r.lecture,
         },
         "vma_kmh": bilan.vma_kmh,
+        "vma_provenance": (
+            {
+                "fourchette_kmh": list(bilan.vma_provenance.fourchette),
+                "source": bilan.vma_provenance.source,
+                "version_calculs": bilan.vma_provenance.version,
+                "mesuree": bilan.vma_provenance.mesuree,
+            }
+            if bilan.vma_provenance
+            else None
+        ),
         "allures": bilan.allures,
         "records": [
             {

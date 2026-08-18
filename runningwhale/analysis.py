@@ -507,23 +507,96 @@ def projections(activities: list[Activity], athlete: Athlete) -> list[Projection
     ]
 
 
-def vma_estimee(activities: list[Activity], athlete: Athlete) -> float | None:
-    """VMA en km/h : profil déclaré, sinon VO2max Garmin, sinon meilleur 5 km."""
+# ---------------------------------------------------------------------------
+# Version des calculs d'estimation
+# ---------------------------------------------------------------------------
+# Chaque valeur estimée est servie avec ce numéro : un rapport ou un plan
+# archivé reste traçable quand une formule change. Historique :
+#   v1 — formules initiales : VMA centrale (VO2max/3,5 ou meilleur 5 km à
+#        92 % de VMA), servie comme un chiffre unique.
+#   v2 (2026-08-18) — retour utilisateur : aucun algorithme ne donne une VMA,
+#        un VO2max ou des zones fiables face à un test en labo. Chaque
+#        estimation porte désormais sa source et sa fourchette d'incertitude,
+#        et les prescriptions se calent sur la borne basse : au pire on
+#        s'entraîne un peu trop doucement, jamais trop fort.
+VERSION_CALCULS = "v2"
+
+
+@dataclass
+class EstimationVMA:
+    """Une VMA estimée, avec ce qu'il faut pour ne pas la prendre pour une mesure."""
+
+    valeur: float                    # borne basse — celle qui sert aux prescriptions
+    fourchette: tuple[float, float]  # plage plausible en km/h
+    source: str                      # d'où vient l'estimation, en toutes lettres
+    version: str = VERSION_CALCULS
+
+    @property
+    def mesuree(self) -> bool:
+        """Vrai pour une valeur déclarée par l'athlète, sans incertitude ajoutée."""
+        return self.fourchette[0] == self.fourchette[1]
+
+
+# Incertitude retenue pour un VO2max de montre : les études de validation
+# donnent ±5 à 10 % selon les modèles, avec un biais plutôt optimiste chez les
+# coureurs peu entraînés — d'où une fourchette asymétrique autour de la centrale.
+_VO2_MARGE_BASSE = 0.90
+_VO2_MARGE_HAUTE = 1.05
+
+# Un 5 km se court à ≈92 % de VMA chez un coureur entraîné ; un débutant tient
+# un pourcentage plus faible, donc la centrale sous-estime déjà sa VMA. La
+# borne basse est la centrale elle-même ; l'incertitude est toute vers le haut.
+_5K_MARGE_HAUTE = 1.10
+
+
+def vma_avec_provenance(
+    activities: list[Activity], athlete: Athlete
+) -> EstimationVMA | None:
+    """VMA en km/h avec source, fourchette et version du calcul.
+
+    Trois sources en cascade : profil déclaré (aucune incertitude ajoutée —
+    c'est la valeur de l'athlète), sinon VO2max de la montre, sinon meilleur
+    temps ramené à un 5 km. Pour les deux sources indirectes, `valeur` est la
+    borne basse de la fourchette : c'est elle qui alimente les allures, pour
+    que l'erreur éventuelle rende l'entraînement trop doux, pas trop dur.
+    """
     if athlete.vma_kmh:
-        return round(athlete.vma_kmh, 1)
+        v = round(athlete.vma_kmh, 1)
+        return EstimationVMA(
+            valeur=v, fourchette=(v, v), source="déclarée dans le profil (vma_kmh)"
+        )
 
     vo2 = next((a.vo2max for a in activities if a.vo2max), None)
     if vo2:
-        return round(vo2 / ML_O2_PAR_KMH, 1)
+        centrale = vo2 / ML_O2_PAR_KMH
+        bas = round(centrale * _VO2_MARGE_BASSE, 1)
+        haut = round(centrale * _VO2_MARGE_HAUTE, 1)
+        return EstimationVMA(
+            valeur=bas,
+            fourchette=(bas, haut),
+            source=f"VO2max de la montre ({vo2:.0f} ml/kg/min)",
+        )
 
     base = meilleure_reference(records(activities))
     if base:
-        # On ramène la meilleure performance à un 5 km équivalent, couru à
-        # environ 92 % de la VMA.
+        # On ramène la meilleure performance à un 5 km équivalent (Riegel),
+        # couru à environ 92 % de la VMA.
         temps_5k = riegel(base.temps_s, base.distance_km, 5.0)
         vitesse_5k = 5.0 / (temps_5k / 3600.0)
-        return round(vitesse_5k / 0.92, 1)
+        centrale = vitesse_5k / 0.92
+        bas = round(centrale, 1)
+        return EstimationVMA(
+            valeur=bas,
+            fourchette=(bas, round(centrale * _5K_MARGE_HAUTE, 1)),
+            source=f"{base.libelle} du {base.quand:%d/%m/%Y}, ramené à un 5 km (Riegel)",
+        )
     return None
+
+
+def vma_estimee(activities: list[Activity], athlete: Athlete) -> float | None:
+    """VMA en km/h : la borne basse de `vma_avec_provenance`, ou None."""
+    est = vma_avec_provenance(activities, athlete)
+    return est.valeur if est else None
 
 
 # Proportion jambe / taille, moyenne anthropométrique usuelle.
@@ -892,6 +965,7 @@ class Bilan:
     tendance_poids: Tendance | None = None
     alerte_allures: str | None = None
     zones_fc: dict[str, tuple[int, int]] = field(default_factory=dict)
+    vma_provenance: EstimationVMA | None = None
 
     @property
     def semaines_actives_recentes(self) -> int:
@@ -920,7 +994,8 @@ def bilan(
 ) -> Bilan:
     """Assemble l'ensemble des indicateurs à partir de l'historique de courses."""
     courses = [a for a in activities if a.est_course]
-    vma = vma_estimee(courses, athlete)
+    provenance = vma_avec_provenance(courses, athlete)
+    vma = provenance.valeur if provenance else None
     derniere = courses[0] if courses else None
 
     return Bilan(
@@ -936,6 +1011,7 @@ def bilan(
         records=records(courses),
         projections=projections(courses, athlete),
         vma_kmh=vma,
+        vma_provenance=provenance,
         allures=allures_entrainement(vma, athlete),
         alerte_allures=allures_sous_la_marche(vma, athlete),
         zones_fc=bornes_zones_fc(athlete),

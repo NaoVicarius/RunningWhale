@@ -26,6 +26,13 @@ Les endroits qui codifient ce principe — à ne pas contourner par confort :
 - `config/athlete.example.yml` ne contient **aucune** valeur physiologique
   pré-remplie. C'est délibéré : un `fc_max: 190` d'exemple serait recopié tel
   quel par des gens qui ne l'ont jamais mesurée.
+- `analysis.vma_avec_provenance` : aucun indicateur estimé (VMA, allures,
+  zones) ne se présente comme une mesure. Chaque estimation porte sa source,
+  sa fourchette d'incertitude et la version du calcul (`VERSION_CALCULS`),
+  et les prescriptions se prennent sur la **borne basse** : une erreur rend
+  l'entraînement trop doux, jamais trop dur. Seul un test terrain ou labo
+  fait foi. Toute modification d'une formule d'estimation incrémente
+  `VERSION_CALCULS` et documente le changement dans son historique.
 
 **Un diagnostic faux compte comme un bug.** Afficher « identifiants refusés »
 quand la cause réelle est un pare-feu ou un filtrage d'IP envoie chercher au

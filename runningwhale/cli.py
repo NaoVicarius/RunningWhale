@@ -274,6 +274,19 @@ def cmd_login(args: argparse.Namespace) -> int:
 def cmd_sync(args: argparse.Namespace) -> int:
     cfg, db = _contexte(args)
 
+    # Espacement des synchros : en conversation, inutile de marteler Garmin à
+    # chaque échange. Si la dernière synchro est assez récente, on ne fait rien
+    # — et on le dit, pour ne pas laisser croire qu'une synchro a eu lieu.
+    if args.espacer:
+        age = _age_derniere_synchro(db)
+        if age is not None and timedelta(0) <= age < timedelta(hours=args.espacer):
+            heures, reste = divmod(int(age.total_seconds()), 3600)
+            info(
+                f"Dernière synchro il y a {heures} h {reste // 60:02d} min : "
+                f"rien à refaire avant {args.espacer:g} h. La base est considérée à jour."
+            )
+            return 0
+
     depuis = None
     if args.depuis:
         depuis = datetime.strptime(args.depuis, "%Y-%m-%d").date()
@@ -306,6 +319,21 @@ def cmd_sync(args: argparse.Namespace) -> int:
             erreur(f"Récupération indisponible ({exc}). Les activités sont bien à jour.")
 
     return 0
+
+
+def _age_derniere_synchro(db) -> timedelta | None:
+    """Temps écoulé depuis la dernière synchro, ou None si inconnue.
+
+    Une valeur illisible (base d'une vieille version, horloge farfelue) compte
+    comme inconnue : dans le doute, on synchronise — jamais l'inverse.
+    """
+    brut = db.get_meta("derniere_synchro")
+    if not brut:
+        return None
+    try:
+        return datetime.now() - datetime.fromisoformat(brut)
+    except ValueError:
+        return None
 
 
 def cmd_import(args: argparse.Namespace) -> int:
@@ -768,6 +796,9 @@ def build_parser() -> argparse.ArgumentParser:
                    help="Ne pas synchroniser sommeil, VFC et readiness")
     p.add_argument("--jours-recup", type=int, default=30,
                    help="Profondeur de la synchro récupération (défaut : 30 jours)")
+    p.add_argument("--espacer", metavar="HEURES", type=float,
+                   help="Ne synchroniser que si la dernière synchro a plus de "
+                        "HEURES heures (sinon, ne rien faire)")
     p.set_defaults(func=cmd_sync)
 
     p = sous.add_parser(

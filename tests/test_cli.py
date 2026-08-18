@@ -107,3 +107,91 @@ def test_watch_chevauchant_ne_declenche_pas_de_double_debrief(tmp_path, monkeypa
 
     assert code == 0
     assert "déjà en cours" in capsys.readouterr().out
+
+
+# ---------------------------------------------------------------------------
+# Espacement des synchros : `coach sync --espacer H`
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def maison(tmp_path, monkeypatch):
+    """Un RUNNINGWHALE_HOME jetable avec un profil minimal."""
+    monkeypatch.setenv("RUNNINGWHALE_HOME", str(tmp_path))
+    (tmp_path / "athlete.yml").write_text(
+        "athlete:\n  prenom: Test\n", encoding="utf-8"
+    )
+    return tmp_path
+
+
+def _poser_derniere_synchro(home, quand: datetime) -> None:
+    db = Database(home / "runningwhale.db")
+    db.set_meta("derniere_synchro", quand.isoformat(timespec="seconds"))
+
+
+def test_espacer_saute_une_synchro_recente(maison, monkeypatch, capsys):
+    """Synchro d'il y a 1 h, espacement 3 h : aucun contact avec Garmin."""
+    _poser_derniere_synchro(maison, datetime.now() - timedelta(hours=1))
+
+    def connexion_interdite(*a, **k):  # pragma: no cover - ne doit pas arriver
+        raise AssertionError("connect() appelé alors que la synchro devait être sautée")
+
+    monkeypatch.setattr(cli, "connect", connexion_interdite)
+    assert cli.main(["sync", "--espacer", "3"]) == 0
+    sorties = capsys.readouterr()
+    assert "rien à refaire" in (sorties.err + sorties.out).lower()
+
+
+def test_espacer_laisse_passer_une_synchro_ancienne(maison, monkeypatch):
+    """Synchro d'il y a 5 h, espacement 3 h : la connexion est bien tentée."""
+    _poser_derniere_synchro(maison, datetime.now() - timedelta(hours=5))
+    appels = []
+
+    def connexion_factice(*a, **k):
+        appels.append(True)
+        raise cli.GarminError("stop ici, le test ne va pas plus loin")
+
+    monkeypatch.setattr(cli, "connect", connexion_factice)
+    assert cli.main(["sync", "--espacer", "3"]) == 1
+    assert appels, "connect() aurait dû être appelé"
+
+
+def test_espacer_synchronise_sur_base_vierge(maison, monkeypatch):
+    """Aucune synchro connue : dans le doute, on synchronise."""
+    appels = []
+
+    def connexion_factice(*a, **k):
+        appels.append(True)
+        raise cli.GarminError("stop ici")
+
+    monkeypatch.setattr(cli, "connect", connexion_factice)
+    assert cli.main(["sync", "--espacer", "3"]) == 1
+    assert appels
+
+
+def test_espacer_ignore_une_date_illisible(maison, monkeypatch):
+    """Une méta corrompue compte comme inconnue : on synchronise."""
+    db = Database(maison / "runningwhale.db")
+    db.set_meta("derniere_synchro", "pas-une-date")
+    appels = []
+
+    def connexion_factice(*a, **k):
+        appels.append(True)
+        raise cli.GarminError("stop ici")
+
+    monkeypatch.setattr(cli, "connect", connexion_factice)
+    assert cli.main(["sync", "--espacer", "3"]) == 1
+    assert appels
+
+
+def test_espacer_resynchronise_si_horloge_recule(maison, monkeypatch):
+    """Dernière synchro « dans le futur » (horloge changée) : on synchronise."""
+    _poser_derniere_synchro(maison, datetime.now() + timedelta(hours=2))
+    appels = []
+
+    def connexion_factice(*a, **k):
+        appels.append(True)
+        raise cli.GarminError("stop ici")
+
+    monkeypatch.setattr(cli, "connect", connexion_factice)
+    assert cli.main(["sync", "--espacer", "3"]) == 1
+    assert appels

@@ -96,3 +96,10 @@ déjà en vigueur ; les autres s'imposeront à la première brique exposée.
 18. Dépendances à jour.
 19. Confirmation par email à l'inscription.
 20. Sauvegarde automatique et récurrente de la base de données.
+
+## Synchronisation en conversation
+
+À chaque échange avec le coach, commencer par `coach sync --espacer 3` : la
+synchro n'a lieu que si la dernière date de plus de 3 heures, sinon la commande
+ne fait rien et le dit. Inutile de marteler Garmin à chaque message — et ne
+jamais laisser croire qu'une synchro a eu lieu quand elle a été sautée.

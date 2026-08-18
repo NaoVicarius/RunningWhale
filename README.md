@@ -391,3 +391,10 @@ douleur qui persiste, un symptôme inhabituel ou une fatigue anormale relèvent
 d'un professionnel de santé.
 
 Projet indépendant, sans affiliation avec Garmin ni Anthropic.
+
+## Licence
+
+RunningWhale est distribué sous licence [GNU AGPL v3](LICENSE)
+(© 2026 NaoVicarius). Vous pouvez l'utiliser, le modifier et le redistribuer
+librement ; si vous le proposez comme service accessible par le réseau, la
+licence vous engage à publier vos modifications sous les mêmes termes.

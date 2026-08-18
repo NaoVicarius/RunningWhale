@@ -61,3 +61,38 @@ repasser par un appel réseau pour produire le même JSON.
 Avant d'affirmer qu'une chose marche : la suite complète (`python -m pytest -q`),
 et pour tout ce qui touche aux données, un essai réel via la CLI — pas seulement
 des tests unitaires. Un garde-fou doit être prouvé actif, pas supposé.
+
+## Sécurité — commandements immuables pour tout développement exposé
+
+Règles fixées par l'athlète (18/08/2026), à appliquer sans discussion dès
+qu'un développement expose quelque chose au réseau — SaaS, API, site, webhook.
+RunningWhale est aujourd'hui une CLI locale : les règles marquées ✔ y sont
+déjà en vigueur ; les autres s'imposeront à la première brique exposée.
+
+1. `.env` dans le `.gitignore` — ✔ ici : aucun secret suivi par git, jetons
+   et clés vivent hors dépôt (`~/.runningwhale/`, variables d'environnement).
+2. Clés API dans le `.env`, jamais dans le code — ✔ ici (`ANTHROPIC_API_KEY`,
+   `GARMIN_TOKENS` : environnement uniquement, masquées dans les sorties).
+3. Rate limiting sur la page de connexion.
+4. RLS (row-level security) activée sur la base de données.
+5. Mots de passe hachés, jamais lisibles — ni en base, ni en journal.
+6. Droits vérifiés côté serveur, pas dans le navigateur.
+7. Clé publique côté client ; la clé secrète ne quitte jamais le serveur.
+8. HTTPS partout.
+9. Sessions qui expirent.
+10. Toute saisie utilisateur validée avant d'entrer en base — ✔ ici, c'est
+    même le principe fondateur (`_plausible`, `_parse_garmin_datetime`…).
+11. Taille maximale sur les fichiers uploadés.
+12. Type des fichiers uploadés vérifié aussi.
+13. CORS configuré explicitement.
+14. Messages d'erreur détaillés coupés en production — ✔ ici : pas de
+    traceback brut, secrets masqués (`garmin.masquer_secrets`).
+15. Journaux propres, non verbeux (pas de `console.log` de debug qui traîne).
+16. Un seul message d'erreur indistinct pour email et mot de passe — ne pas
+    révéler lequel des deux est faux. Nuance assumée : ne jamais non plus
+    accuser les identifiants quand la vraie cause est ailleurs (voir « un
+    diagnostic faux compte comme un bug »).
+17. Webhooks protégés par une signature vérifiée.
+18. Dépendances à jour.
+19. Confirmation par email à l'inscription.
+20. Sauvegarde automatique et récurrente de la base de données.

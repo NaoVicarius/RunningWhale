@@ -301,6 +301,7 @@ def connect(
     _restreindre_jetons(token_dir)
 
     api = Garmin()
+    _blinder_rafraichissement(api)
     try:
         with _silencieux():
             api.login(_source_des_jetons(token_dir))
@@ -338,6 +339,36 @@ def connect(
     # aussitôt.
     _restreindre_jetons(token_dir)
     return api
+
+
+def _blinder_rafraichissement(api: Garmin) -> None:
+    """Repli de transport pour le rafraîchissement de jeton.
+
+    La bibliothèque poste le rafraîchissement OAuth avec une empreinte TLS de
+    navigateur (`curl_cffi`, `impersonate="chrome"`). Certains réseaux de
+    sortie — dont le proxy des sessions cloud — coupent cette poignée de main
+    (`curl: (35) … reset by peer`) alors que la pile HTTP classique passe.
+    Sans repli, le rafraîchissement échoue, la connexion retombe sur le SSO
+    bloqué, et le diagnostic accuse l'IP alors que les jetons étaient bons.
+    On ne replie que sur cette coupure précise : tout autre échec suit sa voie.
+    """
+    client = getattr(api, "client", None)
+    original = getattr(client, "_http_post", None)
+    if not callable(original):
+        return  # version de bibliothèque sans ce point d'entrée : rien à blinder
+
+    def _http_post_blinde(url: str, **kwargs):
+        try:
+            return original(url, **kwargs)
+        except Exception as exc:  # noqa: BLE001 — on filtre sur la signature exacte
+            texte = str(exc).lower()
+            if "reset by peer" in texte or "curl: (35)" in texte:
+                import requests
+
+                return requests.post(url, **kwargs)
+            raise
+
+    client._http_post = _http_post_blinde
 
 
 def _source_des_jetons(token_dir: Path) -> str:

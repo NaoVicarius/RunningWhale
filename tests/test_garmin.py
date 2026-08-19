@@ -591,3 +591,59 @@ def test_erreur_passagere_sur_les_tours_donne_une_activite_sans_tours(db):
     res = sync(ApiToursCasses([activite_garmin("1")]), db, verbose=False)
     assert len(res.nouvelles) == 1
     assert db.get_activity("1").laps == []
+
+
+# ---------------------------------------------------------------------------
+# Repli de transport du rafraîchissement de jeton
+# ---------------------------------------------------------------------------
+
+class _ClientFactice:
+    def __init__(self, exc: Exception | None):
+        self._exc = exc
+        self.appels = []
+
+    def _http_post(self, url, **kwargs):
+        self.appels.append(url)
+        if self._exc:
+            raise self._exc
+        return "direct"
+
+
+class _ApiFactice:
+    def __init__(self, client):
+        self.client = client
+
+
+def test_blinder_replie_sur_la_pile_classique_quand_tls_coupe(monkeypatch):
+    """`curl: (35) … reset by peer` : le POST repart sur `requests`."""
+    import requests as pile
+    from runningwhale.garmin import _blinder_rafraichissement
+
+    client = _ClientFactice(RuntimeError(
+        "Failed to perform, curl: (35) Recv failure: Connection reset by peer"
+    ))
+    api = _ApiFactice(client)
+    _blinder_rafraichissement(api)
+
+    vus = {}
+    monkeypatch.setattr(pile, "post", lambda url, **kw: (vus.setdefault("url", url), "repli")[1])
+    assert client._http_post("https://exemple/oauth/token", data={}) == "repli"
+    assert vus["url"] == "https://exemple/oauth/token"
+
+
+def test_blinder_laisse_passer_les_autres_erreurs():
+    """Un 401 ou une erreur quelconque suit sa voie : pas de repli aveugle."""
+    from runningwhale.garmin import _blinder_rafraichissement
+
+    client = _ClientFactice(RuntimeError("401 Unauthorized"))
+    api = _ApiFactice(client)
+    _blinder_rafraichissement(api)
+    with pytest.raises(RuntimeError, match="401"):
+        client._http_post("https://exemple/oauth/token")
+
+
+def test_blinder_sans_point_d_entree_ne_casse_rien():
+    """Version de bibliothèque sans `_http_post` : on ne blinde rien, sans erreur."""
+    from runningwhale.garmin import _blinder_rafraichissement
+
+    _blinder_rafraichissement(_ApiFactice(client=None))

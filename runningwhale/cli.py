@@ -18,6 +18,7 @@ from .config import Config, default_config_path, ensure_dirs, load_config
 from .db import Database
 from .garmin import (
     GarminError,
+    avertissement_rotation,
     connect,
     exporter_jetons,
     masquer_secrets,
@@ -300,6 +301,10 @@ def cmd_sync(args: argparse.Namespace) -> int:
     except GarminError as exc:
         erreur(str(exc))
         return 1
+
+    rotation = avertissement_rotation(api)
+    if rotation:
+        erreur(rotation)
 
     info("")
     if resultat.nouvelles:

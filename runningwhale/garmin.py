@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import getpass
+import hashlib
+import json
 import logging
 import os
 import re
@@ -176,6 +178,32 @@ def _ip_refusee(chaine: str) -> bool:
     return any(signe in bas for signe in _SIGNES_D_IP_REFUSEE)
 
 
+# Signature d'un jeton de rafraîchissement refusé par Garmin : il a expiré, ou
+# — cas le plus fréquent ici — il a déjà servi et la rotation l'a invalidé.
+_SIGNES_DE_JETON_PERIME = (
+    "invalid_grant",
+    "invalid refresh token",
+    "no di refresh token available",
+)
+
+
+def _jeton_perime(chaine: str) -> bool:
+    """Vrai si la chaîne de causes trahit un jeton de rafraîchissement refusé."""
+    bas = chaine.lower()
+    return any(signe in bas for signe in _SIGNES_DE_JETON_PERIME)
+
+
+def _message_jeton_perime() -> str:
+    return (
+        "Tes jetons Garmin ne sont plus valides : le jeton de rafraîchissement a "
+        "été refusé (expiré, ou déjà consommé — Garmin l'invalide dès qu'il a "
+        "servi). Ce n'est ni ton mot de passe ni ton adresse IP.\n"
+        "La voie qui marche : relance `coach login --exporter` depuis une machine "
+        "à IP résidentielle, et remplace la valeur du secret d'environnement "
+        "GARMIN_TOKENS par celle qui s'affiche."
+    )
+
+
 def _message_ip_refusee() -> str:
     return (
         "Garmin refuse cette adresse IP, pas tes identifiants : la connexion est "
@@ -228,6 +256,14 @@ def _traduire(
     # forme de quota, de CAPTCHA ou de 403 Cloudflare — jamais sous forme
     # d'erreur d'identifiants, alors que c'est ainsi que ça ressort en bout de
     # chaîne une fois toutes les voies de connexion épuisées.
+    # Encore le même piège, et le plus trompeur des trois : quand des jetons
+    # sont posés mais périmés, la connexion retombe sur le SSO, que Garmin
+    # refuse ensuite sur l'IP. Le dernier refus de la chaîne parle donc d'IP,
+    # alors que la cause première — et la seule réparable — est le jeton. Ce
+    # test passe avant celui de l'IP, sinon il ne servirait jamais.
+    if _jeton_perime(indices):
+        return GarminError(_message_jeton_perime())
+
     if _ip_refusee(indices):
         return GarminError(_message_ip_refusee())
 
@@ -302,12 +338,16 @@ def connect(
 
     api = Garmin()
     _blinder_rafraichissement(api)
+    # Ce que la voie jeton a dit en échouant : c'est là, et nulle part ailleurs,
+    # qu'un « invalid_grant » apparaît. Sans le garder, le diagnostic final ne
+    # verrait que le refus du SSO — et accuserait l'IP au lieu du jeton.
+    journal_jetons: list[str] = []
     try:
-        with _silencieux():
+        with _silencieux() as journal:
             api.login(_source_des_jetons(token_dir))
         return api
     except Exception:  # jetons absents, invalides ou expirés → connexion complète
-        pass
+        journal_jetons = list(journal)
 
     email = email or os.environ.get("GARMIN_EMAIL")
     password = password or os.environ.get("GARMIN_PASSWORD")
@@ -332,7 +372,9 @@ def connect(
             api.login()
             _sauver_jetons(api, token_dir)
     except Exception as exc:  # noqa: BLE001 — l'API remonte des exceptions variées
-        raise _traduire(exc, "connexion à Garmin Connect", journal) from exc
+        raise _traduire(
+            exc, "connexion à Garmin Connect", journal_jetons + journal
+        ) from exc
 
     # La bibliothèque écrit les jetons avec le umask courant (souvent 0644,
     # lisibles par tous) : ils valent un an d'accès au compte, on les restreint
@@ -384,15 +426,70 @@ def _source_des_jetons(token_dir: Path) -> str:
     depuis_env = os.environ.get("GARMIN_TOKENS", "").strip()
     if not depuis_env:
         return str(token_dir)
-    # La bibliothèque distingue contenu et chemin sur la longueur (> 512
-    # caractères = contenu). Un JSON de jetons plus court serait pris pour un
-    # chemin : on l'écrit alors dans le dossier, où il sera lu normalement.
-    if depuis_env.startswith("{") and len(depuis_env) <= 512:
+    # Un contenu JSON est toujours matérialisé dans le dossier, et c'est le
+    # **chemin** qui est rendu — jamais le contenu. La distinction n'est pas
+    # cosmétique : la bibliothèque ne retient de quoi réécrire les jetons
+    # (`_tokenstore_path`) que si on l'a chargée depuis un chemin. Chargée
+    # depuis un contenu, elle rafraîchit sans rien persister — or Garmin fait
+    # **tourner** le jeton de rafraîchissement à chaque usage et invalide
+    # l'ancien. Le secret d'environnement devenait donc à usage unique, et la
+    # session suivante repartait avec un jeton mort.
+    if depuis_env.startswith("{"):
         cible = token_dir / "garmin_tokens.json"
         cible.write_text(depuis_env)
         _restreindre_jetons(token_dir)
         return str(token_dir)
     return depuis_env
+
+
+def _empreinte_rafraichissement(api: Garmin) -> str | None:
+    """Empreinte courte du jeton de rafraîchissement, pour détecter sa rotation.
+
+    Jamais le jeton lui-même : il vaut un an d'accès au compte, et cette valeur
+    peut finir dans un journal.
+    """
+    for porteur in (getattr(api, "client", None), getattr(api, "garth", None)):
+        jeton = getattr(porteur, "di_refresh_token", None)
+        if jeton:
+            return hashlib.sha256(str(jeton).encode()).hexdigest()[:12]
+    return None
+
+
+def _empreinte_du_secret() -> str | None:
+    """Empreinte du jeton de rafraîchissement posé dans `GARMIN_TOKENS`."""
+    brut = os.environ.get("GARMIN_TOKENS", "").strip()
+    if not brut.startswith("{"):
+        return None
+    try:
+        jeton = json.loads(brut).get("di_refresh_token")
+    except (ValueError, AttributeError):
+        return None
+    return hashlib.sha256(str(jeton).encode()).hexdigest()[:12] if jeton else None
+
+
+def avertissement_rotation(api: Garmin) -> str | None:
+    """Prévient quand les jetons ont tourné et que le secret est périmé.
+
+    Garmin invalide le jeton de rafraîchissement dès qu'il a servi. Sur une
+    machine qui garde son dossier de jetons, c'est transparent. En session
+    cloud, le conteneur est jeté à la fin : le dossier disparaît, la session
+    suivante repart du secret d'environnement — devenu invalide sans que rien
+    ne l'ait dit. D'où cet avertissement, qui dit quoi faire tant que la
+    session en cours peut encore produire la nouvelle valeur.
+    """
+    avant = _empreinte_du_secret()
+    if avant is None:
+        return None  # pas de secret d'environnement : le dossier fait foi
+    apres = _empreinte_rafraichissement(api)
+    if apres is None or apres == avant:
+        return None
+    return (
+        "Tes jetons Garmin viennent de tourner : celui posé dans GARMIN_TOKENS "
+        "est désormais périmé, et la prochaine session repartirait dessus.\n"
+        "Récupère la nouvelle valeur avec `coach login --exporter` (tant que "
+        "cette session vit, aucune reconnexion n'est nécessaire) et remplace le "
+        "secret GARMIN_TOKENS avec."
+    )
 
 
 def _sauver_jetons(api: Garmin, token_dir: Path) -> None:

@@ -7,6 +7,7 @@ incrémentale.
 
 from __future__ import annotations
 
+import json
 import logging
 from datetime import date, datetime, timedelta
 
@@ -647,3 +648,98 @@ def test_blinder_sans_point_d_entree_ne_casse_rien():
     from runningwhale.garmin import _blinder_rafraichissement
 
     _blinder_rafraichissement(_ApiFactice(client=None))
+
+
+# ---------------------------------------------------------------------------
+# Rotation du jeton de rafraîchissement
+# ---------------------------------------------------------------------------
+
+def test_secret_json_est_materialise_en_chemin(tmp_path, monkeypatch):
+    """Un secret JSON, même long, est écrit sur disque et c'est le chemin qui sert.
+
+    C'est ce qui permet à la bibliothèque de persister le jeton issu de la
+    rotation : chargée depuis un contenu, elle ne réécrit rien.
+    """
+    from runningwhale.garmin import _source_des_jetons
+
+    long_json = json.dumps({"di_token": "a" * 900, "di_refresh_token": "b",
+                            "di_client_id": "c"})
+    assert len(long_json) > 512
+    monkeypatch.setenv("GARMIN_TOKENS", long_json)
+
+    source = _source_des_jetons(tmp_path)
+    assert source == str(tmp_path)
+    assert json.loads((tmp_path / "garmin_tokens.json").read_text())["di_refresh_token"] == "b"
+
+
+def test_chemin_dans_le_secret_reste_un_chemin(tmp_path, monkeypatch):
+    """`GARMIN_TOKENS` peut aussi porter un chemin : on le rend tel quel."""
+    from runningwhale.garmin import _source_des_jetons
+
+    monkeypatch.setenv("GARMIN_TOKENS", "/ailleurs/jetons")
+    assert _source_des_jetons(tmp_path) == "/ailleurs/jetons"
+
+
+class _ClientJetons:
+    def __init__(self, refresh):
+        self.di_refresh_token = refresh
+
+
+def test_avertissement_quand_les_jetons_ont_tourne(monkeypatch):
+    """Le jeton en session diffère de celui du secret : il faut prévenir."""
+    from runningwhale.garmin import avertissement_rotation
+
+    monkeypatch.setenv("GARMIN_TOKENS", json.dumps({"di_refresh_token": "ancien"}))
+    message = avertissement_rotation(_ApiFactice(_ClientJetons("nouveau")))
+    assert message is not None
+    assert "GARMIN_TOKENS" in message
+    # Jamais le jeton lui-même : cette sortie peut finir dans un journal.
+    assert "nouveau" not in message and "ancien" not in message
+
+
+def test_pas_d_avertissement_sans_rotation(monkeypatch):
+    from runningwhale.garmin import avertissement_rotation
+
+    monkeypatch.setenv("GARMIN_TOKENS", json.dumps({"di_refresh_token": "pareil"}))
+    assert avertissement_rotation(_ApiFactice(_ClientJetons("pareil"))) is None
+
+
+def test_pas_d_avertissement_sans_secret(monkeypatch):
+    """Sans secret d'environnement, le dossier fait foi : rien à signaler."""
+    from runningwhale.garmin import avertissement_rotation
+
+    monkeypatch.delenv("GARMIN_TOKENS", raising=False)
+    assert avertissement_rotation(_ApiFactice(_ClientJetons("peu importe"))) is None
+
+
+def test_jeton_perime_nomme_la_vraie_cause():
+    """`invalid_grant` ne doit jamais ressortir en « IP refusée »."""
+    from runningwhale.garmin import _traduire
+
+    journal = [
+        'DI token refresh failed: 400 {"error":"invalid_grant",'
+        '"error_description":"Invalid refresh token: eyJ..."}',
+        "Retrying social profile fetch: API Error 401 -",
+    ]
+    message = str(_traduire(RuntimeError("Failed to retrieve social profile"),
+                            "connexion", journal))
+    assert "jeton de rafraîchissement" in message
+    assert "adresse IP" not in message.split("Ce n'est ni")[0]
+
+
+def test_jeton_perime_prime_sur_le_refus_d_ip():
+    """Jetons morts *puis* SSO refusé sur l'IP : c'est le jeton qu'il faut nommer.
+
+    C'est l'ordre réel des événements en session cloud, et le refus d'IP est le
+    dernier de la chaîne — donc le plus visible, et le plus trompeur.
+    """
+    from runningwhale.garmin import _traduire
+
+    journal = [
+        'DI token refresh failed: 400 {"error":"invalid_grant"}',
+        "portal login failed (non-json): HTTP 403",
+        "captcha_required",
+    ]
+    message = str(_traduire(RuntimeError("Failed to retrieve social profile"),
+                            "connexion", journal))
+    assert "jeton de rafraîchissement" in message

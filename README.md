@@ -84,6 +84,51 @@ coach import ~/Téléchargements/
 Il fouille récursivement et ne compte jamais deux fois la même sortie, même si
 elle arrive sous deux formats différents.
 
+### 3 bis. Synchroniser directement depuis Garmin (sans CSV)
+
+Une fois connecté, plus besoin d'export manuel : `coach sync` va chercher les
+nouvelles sorties, et les données de récupération qui vont avec.
+
+```bash
+coach login     # une fois : email, mot de passe, code de vérification
+coach sync      # à chaque fois que tu veux rafraîchir
+```
+
+Les jetons obtenus sont rangés dans `~/.runningwhale/garmin_tokens/`, valent
+environ un an, et **ne quittent jamais ta machine**.
+
+#### Faire tourner le coach ailleurs que chez toi
+
+Garmin refuse d'authentifier les adresses IP de centre de données : un serveur,
+une intégration continue ou une session cloud ne peuvent pas se connecter avec
+un mot de passe, quoi qu'on tente. La voie qui marche est de leur passer des
+jetons obtenus depuis une connexion domestique.
+
+**Sur ta machine** (celle qui a une connexion ordinaire) :
+
+```bash
+coach login --exporter
+```
+
+La commande imprime une valeur JSON. **Sur la machine distante**, pose-la dans
+la variable d'environnement `GARMIN_TOKENS` — comme un secret, jamais dans un
+fichier suivi par git :
+
+```bash
+export GARMIN_TOKENS='{"di_token": "...", ...}'
+coach sync
+```
+
+> ⚠️ Cette valeur vaut l'accès à ton compte Garmin. Traite-la comme un mot de
+> passe : pas de copier-coller dans une conversation, un ticket ou un journal.
+
+Garmin **fait tourner** ce jeton : dès qu'il sert à se rafraîchir, l'ancien est
+invalidé. Sur une machine qui garde son dossier de jetons, c'est transparent.
+Sur une machine éphémère (conteneur jeté à la fin de la session), le dossier
+disparaît : `coach sync` te prévient alors que le jeton a tourné, et il faut
+remettre à jour `GARMIN_TOKENS` avec la valeur rendue par `coach login
+--exporter`.
+
 ### 4. Regarder
 
 ```bash
